@@ -1,0 +1,106 @@
+{
+  "titulo": "Follow-up da distribuição ConvaTec",
+  "subtitulo": "Notas fiscais da ConvaTec Brasil, por situação de entrega",
+  "entrada": "dados/CONVATEC.csv",
+  "data_referencia": "arquivo",
+  "meta_otd": 95,
+  "publico": "saida/publico/index.html",
+  "saidas": {
+    "interno": "saida/painel_interno.html",
+    "cliente": "saida/painel_cliente.html"
+  },
+  "colunas": {
+    "cte": [
+      "Cte",
+      "CTRC"
+    ],
+    "nf": [
+      "Nota fiscal",
+      "Nota Fiscal",
+      "NF"
+    ],
+    "emissao": [
+      "Data",
+      "Data CT-e",
+      "DT Emissao CTRC"
+    ],
+    "dealer": [
+      "Nome do DN",
+      "Destinatário"
+    ],
+    "cidade": [
+      "Cidade"
+    ],
+    "uf": [
+      "UF Dest.",
+      "UF Dest",
+      "UF Destino"
+    ],
+    "regiao": [
+      "Região",
+      "Regiao"
+    ],
+    "modal": [
+      "Modalidade"
+    ],
+    "tsp": [
+      "Transp.",
+      "Transportadora"
+    ],
+    "prev": [
+      "PREVISAO DE ENTREGA",
+      "Previsão de Entrega"
+    ],
+    "nova_prev": [
+      "NOVA DATA PREV ENTREGA"
+    ],
+    "entrega": [
+      "DATA DA ENTREGA"
+    ],
+    "dt_coleta": [
+      "Data coleta transportador"
+    ],
+    "valor": [
+      "Val.NF (BI AE)",
+      "VLR_MERC_NF"
+    ],
+    "frete": [
+      "Frete do CTe (BI AI)"
+    ],
+    "volume": [
+      "Qtde. Vol. da NF (BI J)"
+    ],
+    "cte24": [
+      "CTE 24 HRS"
+    ],
+    "obs": [
+      "OBSERVAÇÃO",
+      "OBSERVACAO"
+    ],
+    "atraso_excel": [
+      "ATRASO"
+    ],
+    "coleta": [
+      "Coleta"
+    ],
+    "prev_coleta": [
+      "PREVISÃO DE COLETA",
+      "PREVISAO DE COLETA"
+    ],
+    "nfs_cte": [
+      "Qtde. NFs do CTe",
+      "Qtde NFs do CTe"
+    ]
+  },
+  "obrigatorias": [
+    "nf",
+    "cte",
+    "emissao",
+    "prev",
+    "entrega",
+    "uf"
+  ],
+  "so_interno": [
+    "tsp"
+  ]
+}

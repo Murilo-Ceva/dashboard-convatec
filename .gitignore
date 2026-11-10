@@ -1,0 +1,11 @@
+# Dados reais nunca entram
+*.csv
+!**/dados/exemplo.csv
+*.csv.gz
+*.xlsx
+*.xlsm
+*.xls
+**/saida/
+__pycache__/
+~$*
+.env

@@ -1,0 +1,22 @@
+# Dados reais e segredos nunca sobem
+dados/*
+!dados/exemplo.csv
+saida/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+credentials*.json
+cookies*
+.chrome-profile/
+# Excel aberto e temporarios
+~$*
+*.tmp
+*.log
+*.inspect.ndjson
+# Dependencias
+node_modules/
+__pycache__/
+.venv/
