@@ -64,8 +64,13 @@ def data(v):
 
 
 def situacao(d, ref):
-    """Mesma regra do HTML. Previsão original (coluna PREVISAO DE ENTREGA) é a base do prazo."""
+    """Mesma regra do HTML. Previsão original (coluna PREVISAO DE ENTREGA) é a base do prazo,
+    salvo cliente que agendou para depois dela: aí o prazo é a data agendada."""
     prev, ent = data(d.get("prev")), data(d.get("entrega"))
+    sim = lambda k: (d.get(k) or "").strip().upper() == "SIM"
+    dag = data(d.get("data_agend")) or (data(d.get("nova_prev")) if sim("agend_ok") else None)
+    if prev and dag and sim("agendado") and sim("agend_ok") and dag > prev:
+        prev = dag
     if not prev:
         return "sp"
     if ent:

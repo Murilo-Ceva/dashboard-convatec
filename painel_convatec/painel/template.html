@@ -102,6 +102,9 @@ th{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink2)
 .pill{display:inline-flex;gap:6px;align-items:center;font-size:12px;font-weight:600}.pill i{width:18px;height:18px;border-radius:50%;display:inline-grid;place-items:center;color:#fff;font-style:normal;font-size:10px;font-weight:800}.pill i.esc{color:#0b0b0b}
 #leitura{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:8px}#leitura li{position:relative;padding-left:20px}#leitura li::before{content:"";position:absolute;left:2px;top:7px;width:8px;height:8px;border-radius:2px;background:var(--red)}
 .qual{display:grid;grid-template-columns:minmax(150px,240px) 1fr 70px;gap:8px 12px;align-items:center;font-size:13px}.qual .trk{height:10px}.qual .trk i{display:block;height:100%;background:var(--tr);border-radius:5px}
+.agk{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px;margin:4px 0 18px}.agk .kpi b{font-size:24px}
+.g2ag{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:18px}.g2ag h3{font-size:13px;margin:0 0 8px;color:var(--ink2);font-weight:700;letter-spacing:.3px}
+@media (max-width:900px){.g2ag{grid-template-columns:1fr}}
 .nodata{color:var(--ink2);font-size:13px;padding:8px 0}
 .rod{color:var(--muted);font-size:12px;display:flex;gap:8px;align-items:flex-start}
 #vazio{display:none;text-align:center;padding:48px 24px}#vazio .ic{width:56px;height:56px;border-radius:16px;margin:0 auto 14px;color:var(--tr);background:color-mix(in srgb,var(--tr) 12%,transparent)}#vazio .ic svg.i{width:26px;height:26px}
@@ -173,6 +176,7 @@ html{scroll-snap-type:y proximity}.snap{scroll-snap-align:start}
     <a href="#sec-prazo"><svg class="i"><use href="#i-clock"/></svg>Prazos</a>
     <a href="#sec-cortes"><svg class="i"><use href="#i-bars"/></svg>Cortes</a>
     <a href="#sec-dia"><svg class="i"><use href="#i-cal"/></svg>Emissão e CT-es</a>
+    <a href="#sec-agend"><svg class="i"><use href="#i-cal"/></svg>Agendamentos</a>
     <a href="#sec-matriz"><svg class="i"><use href="#i-map"/></svg>Matriz</a>
     <a href="#sec-qual"><svg class="i"><use href="#i-check"/></svg>Qualidade da base</a>
     <a href="#notas"><svg class="i"><use href="#i-table"/></svg>Notas fiscais<em id="navN"></em></a>
@@ -212,6 +216,7 @@ html{scroll-snap-type:y proximity}.snap{scroll-snap-align:start}
       <div class="card"><h2>Notas por dia de emissão do CT-e <i class="info" data-tip="Emissão&#10;Volume diário, empilhado por situação. Últimos 31 dias com emissão. Passe o mouse para ver notas, CT-es e frete do dia.">i</i></h2><p class="desc">Volume diário, por situação. Clique num dia para filtrar.</p><div class="hist" id="evo"></div><div class="eixo" id="evox"></div></div>
       <div class="card"><h2>Situação: notas, CT-es e frete <i class="info" data-tip="Por situação&#10;Barra = notas. Abaixo, os CT-es dessas notas e o frete rateado. Um CT-e com notas em situações diferentes aparece em mais de uma coluna.">i</i></h2><p class="desc" id="stqdesc"></p><div class="hist" id="stq"></div><div class="eixo" id="stqx"></div><div class="stc" id="stqc"></div></div>
     </section>
+    <section class="card snap" id="sec-agend"><h2>Agendamentos <i class="info" data-tip="Agendamento de entrega&#10;Clientes da aba Agendamentos (coluna CLIENTE AGENDADO). Agendada = AGENDAMENTO REALIZADO SIM. 24h = SIM marcado até 1 dia útil depois da emissão do CT-e (data gravada sozinha pela planilha). Se o cliente agendou para depois da previsão, o prazo passa a ser a data agendada.">i</i></h2><p class="desc" id="agdesc"></p><div class="agk" id="agk"></div><div class="g2ag"><div><h3>SITUAÇÃO DO AGENDAMENTO</h3><div id="agbar"></div></div><div><h3>POR MÊS DO AGENDAMENTO</h3><div id="agdn"></div></div></div><div class="tw" style="margin-top:14px"><table id="agt"></table></div></section>
     <section class="card snap" id="sec-matriz"><h2 id="heattit">Matriz</h2><p class="desc">Notas sem entrega. Vermelho mais forte = maior parte vencida. Ponto = sem notas. Clique numa célula para filtrar.</p><div class="tw"><table class="heat" id="heat"></table></div></section>
     <section class="card snap" id="sec-qual"><h2>Qualidade da base</h2><p class="desc">Quanto de cada campo está preenchido no recorte. Campo vazio limita o que o painel consegue medir.</p><div class="qual" id="qual"></div></section>
     <section class="card snap" id="notas">
@@ -236,11 +241,18 @@ var SIT=[{k:"ok",n:"Entregue no prazo",c:"var(--ok)",i:"✓",d:"Entrega registra
  {k:"fora",n:"Entregue com atraso",c:"var(--fora)",i:"✕",esc:1,d:"Entrega registrada depois da previsão original."},
  {k:"sp",n:"Sem previsão",c:"var(--sp)",i:"?",d:"Sem previsão de entrega: fica fora do prazo e do OTD."}];
 var SK={};SIT.forEach(function(s){SK[s.k]=s});
+var AG=[{k:"pe",n:"Pendente, passou das 24h",c:"var(--venc)",i:"!",d:"Cliente exige agendamento, a nota está sem entrega, AGENDAMENTO REALIZADO não está SIM e já passou 1 dia útil da emissão do CT-e."},
+ {k:"pp",n:"Pendente, ainda nas 24h",c:"var(--tr)",i:"…",d:"Ainda dentro de 1 dia útil da emissão do CT-e e AGENDAMENTO REALIZADO não está SIM."},
+ {k:"a24",n:"Agendada em até 24h",c:"var(--ok)",i:"✓",d:"AGENDAMENTO REALIZADO marcado como SIM até 1 dia útil depois da emissão do CT-e (a data é gravada sozinha pela planilha)."},
+ {k:"af",n:"Agendada depois das 24h",c:"var(--fora)",i:"✕",esc:1,d:"AGENDAMENTO REALIZADO marcado como SIM mais de 1 dia útil depois da emissão do CT-e."},
+ {k:"asr",n:"Agendada sem data de registro",c:"var(--sp)",i:"?",d:"AGENDAMENTO REALIZADO = SIM, mas sem DATA DO AGENDAMENTO (marcado antes da gravação automática ou colado)."},
+ {k:"es",n:"Entregue sem agendamento marcado",c:"var(--sp)",i:"·",d:"Nota entregue de cliente com agendamento, sem SIM em AGENDAMENTO REALIZADO."}];
+var AGK={};AG.forEach(function(s){AGK[s.k]=s});
 var DIM=[["tsp","Transportadora"],["uf","UF destino"],["regiao","Região"],["modal","Modalidade"],["dealer","Destinatário"]].filter(function(d){return INT||d[0]!=="tsp"});
 var LISTAS=DIM.filter(function(d){return d[0]!=="modal"});
 var FX=[["v6","Vencida há mais de 5 dias",-1e9,-6],["v3","Vencida há 3 a 5 dias",-5,-3],["v1","Vencida há 1 ou 2 dias",-2,-1],["h0","Vence hoje",0,0],["f2","Vence em 1 ou 2 dias",1,2],["f5","Vence em 3 a 5 dias",3,5],["f10","Vence em 6 a 10 dias",6,10],["f99","Vence em mais de 10 dias",11,1e9]];
 var FXC=["v6","v3","v1","h0","f2","f5","f10","f99"],FXL=["> 5 venc.","3–5 venc.","1–2 venc.","Hoje","1–2 d","3–5 d","6–10 d","> 10 d"];
-var R=[],REF,FONTE,TEM={},ESC="all",SEL={sit:new Set(),faixa:new Set(),dia:new Set(),par:new Set()},st={k:"dias",d:1,p:0};
+var R=[],REF,FONTE,TEM={},ESC="all",SEL={sit:new Set(),faixa:new Set(),dia:new Set(),par:new Set(),ag:new Set()},st={k:"dias",d:1,p:0};
 DIM.forEach(function(d){SEL[d[0]]=new Set()});
 function $(i){return document.getElementById(i)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
@@ -252,6 +264,9 @@ function dt(v){var m=String(v||"").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)||Stri
 function num(v){if(v==null||v==="")return null;var s=String(v).replace(/R\$|\s/g,"");if(s.indexOf(",")>=0)s=s.replace(/\./g,"").replace(",",".");var n=Number(s);return isNaN(n)?null:n}
 function fd(d){return d?("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear():""}
 function dd(a,b){return Math.round((a-b)/DIA)}
+/* dias úteis (seg a sex) depois de a até b; 0 = mesmo dia. Feriados não entram no painel */
+function du(a,b){var x=new Date(a.getFullYear(),a.getMonth(),a.getDate()),y=new Date(b.getFullYear(),b.getMonth(),b.getDate()),n=0;if(y<=x)return 0;while(x<y){x.setDate(x.getDate()+1);var w=x.getDay();if(w&&w<6)n++}return n}
+var MES=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
 function uniq(a){return Object.keys(a.reduce(function(o,x){o[x]=1;return o},{}))}
 function ico(n){return '<svg class="i"><use href="#i-'+n+'"/></svg>'}
 
@@ -265,8 +280,16 @@ function montar(cols,rows,ref,fonte){
  R=rows.filter(function(r){return g(r,"nf")||g(r,"cte")}).map(function(r,i){
   var o={id:i,nf:g(r,"nf"),cte:g(r,"cte"),em:dt(g(r,"emissao")),dealer:g(r,"dealer")||"(vazio)",cidade:g(r,"cidade"),uf:g(r,"uf")||"(vazio)",regiao:g(r,"regiao")||"(vazio)",modal:g(r,"modal")||"(vazio)",tsp:INT?(g(r,"tsp")||"(vazio)"):"",
    prev:dt(g(r,"prev")),nprev:dt(g(r,"nova_prev")),ent:dt(g(r,"entrega")),col:dt(g(r,"dt_coleta")),pcol:dt(g(r,"prev_coleta")),valor:num(g(r,"valor")),fcte:"frete" in TEM?num(g(r,"frete")):null,vol:num(g(r,"volume")),c24:g(r,"cte24"),obs:g(r,"obs")};
+  o.agc=nrm(g(r,"agendado"))==="SIM";o.agr=nrm(g(r,"agend_ok"))==="SIM";o.dta=dt(g(r,"dt_agto"));
+  /* data combinada com o cliente: DATA AGENDADA se existir; senão NOVA DATA PREV ENTREGA quando o agendamento foi feito */
+  o.dag=dt(g(r,"data_agend"))||(o.agr?o.nprev:null);o.agd=o.dag&&o.prev?dd(o.dag,o.prev):null;
+  /* cliente agendou para depois da previsão: o prazo passa a ser a data agendada (não conta como atraso) */
+  o.pz=o.prev&&o.agc&&o.agr&&o.dag&&o.dag>o.prev?o.dag:o.prev;o.pzag=o.pz!==o.prev;
+  var a24=nrm(g(r,"ag24"));o.du=o.dta&&o.em?du(o.em,o.dta):null;o.a24=a24==="SIM"?true:a24==="NAO"?false:o.du==null?null:o.du<=1;
+  o.ag=!o.agc?"":o.agr?(o.a24===true?"a24":o.a24===false?"af":"asr"):(o.ent?"es":(o.em&&du(o.em,REF)<=1?"pp":"pe"));
+  o.mag=o.dta?MES[o.dta.getMonth()]+"/"+o.dta.getFullYear():"";
   o.coleta=o.col||dt(g(r,"coleta"));o.otp=o.pcol&&o.coleta?(o.coleta<=o.pcol?"ok":"fora"):"";
-  if(!o.prev){o.sit="sp";o.dias=null}else if(o.ent){o.sit=o.ent<=o.prev?"ok":"fora";o.dias=dd(o.prev,o.ent)}else{o.dias=dd(o.prev,REF);o.sit=o.dias<0?"venc":"tr"}
+  if(!o.pz){o.sit="sp";o.dias=null}else if(o.ent){o.sit=o.ent<=o.pz?"ok":"fora";o.dias=dd(o.pz,o.ent)}else{o.dias=dd(o.pz,REF);o.sit=o.dias<0?"venc":"tr"}
   o.faixa=!o.ent&&o.prev?faixa(o.dias):"";o.diaem=o.em?fd(o.em):"(sem data)";o.par=(INT?o.tsp:o.regiao)+" × "+o.uf;return o});
  if(!R.length)throw new Error("Nenhuma linha com NF ou CT-e.");
  /* o frete do BI vem por CT-e e se repete em cada nota do CT-e: rateia pelas notas para não somar em dobro */
@@ -291,7 +314,7 @@ function filtrar(ex){
   if(!escOk(r))return false;
   for(var i=0;i<DIM.length;i++){var c=DIM[i][0],e=$("f-"+c);if(e&&e.value&&r[c]!==e.value)return false;if(ex!==c&&SEL[c].size&&!SEL[c].has(r[c]))return false}
   if(ex!=="sit"&&SEL.sit.size&&!SEL.sit.has(r.sit))return false;
-  if(ex!=="faixa"&&SEL.faixa.size&&!SEL.faixa.has(r.faixa))return false;if(ex!=="dia"&&SEL.dia.size&&!SEL.dia.has(r.diaem))return false;if(ex!=="par"&&SEL.par.size&&!SEL.par.has(r.par))return false;
+  if(ex!=="faixa"&&SEL.faixa.size&&!SEL.faixa.has(r.faixa))return false;if(ex!=="dia"&&SEL.dia.size&&!SEL.dia.has(r.diaem))return false;if(ex!=="par"&&SEL.par.size&&!SEL.par.has(r.par))return false;if(ex!=="ag"&&SEL.ag.size&&!SEL.ag.has(r.ag))return false;
   if(de&&(!r.em||r.em<de))return false;if(ate&&(!r.em||r.em>ate))return false;
   if(q&&nrm([r.nf,r.cte,r.cidade,r.dealer,r.uf].join(" ")).indexOf(q)<0)return false;return true})}
 function filtrado(){return Object.keys(SEL).some(function(k){return SEL[k].size})||ESC!=="all"||$("f-q").value||[].some.call($("filtros").querySelectorAll("select,input"),function(i){return i.value})}
@@ -337,6 +360,7 @@ function leitura(rs){
  if(c.sp)o.push(fmt(c.sp)+" notas sem previsão de entrega ficam fora do prazo e do OTD.");
  var ot={ok:0,fora:0};rs.forEach(function(r){if(r.otp)ot[r.otp]++});if(ot.ok+ot.fora)o.push("OTP de coleta de <b>"+pc(ot.ok,ot.ok+ot.fora)+"</b> em "+fmt(ot.ok+ot.fora)+" notas com previsão de coleta"+(c.n>ot.ok+ot.fora?"; "+fmt(c.n-ot.ok-ot.fora)+" notas não têm essa previsão":"")+".");
  if("frete" in TEM){var fz=frete(rs);if(fz.ctes)o.push("Frete de <b>"+brl(fz.v)+"</b> em "+fmt(fz.ctes)+" CT-es"+(fz.sem?" ("+fmt(fz.sem)+" CT-es sem frete na base)":"")+".")}
+ if("agendado" in TEM){var ap=rs.filter(function(r){return r.ag==="pe"}).length,aa=rs.filter(function(r){return r.ag==="af"}).length;if(ap||aa)o.push((ap?"<b>"+fmt(ap)+" notas</b> de clientes com agendamento passaram de 1 dia útil sem agendar. ":"")+(aa?fmt(aa)+" notas foram agendadas depois das 24h.":""))}
  var sv=rs.filter(function(r){return r.valor==null}).length;if(sv)o.push("Valor da NF ausente em "+fmt(sv)+" notas ("+pc(sv,c.n)+"): os totais em reais são parciais.");
  $("leitura").innerHTML=o.map(function(x){return "<li>"+x+"</li>"}).join("")}
 function donut(){
@@ -384,37 +408,56 @@ function heat(){
  if(!X.length){$("heat").innerHTML='<tr><td class="nodata">Nenhuma nota sem entrega no recorte.</td></tr>';return}
  $("heat").innerHTML="<thead><tr><th></th>"+Y.map(function(y){return "<th>"+esc(y)+"</th>"}).join("")+"</tr></thead><tbody>"+X.map(function(x){return "<tr><td title=\""+esc(x)+"\">"+esc(x)+"</td>"+Y.map(function(y){var k=x+" × "+y;if(!m[k])return '<td style="color:var(--muted)">·</td>';var c=conta(m[k]),v=c.venc/c.n;
   return '<td><button type="button" class="cel'+of("par",k)+'" data-d="par" data-v="'+esc(k)+'"'+pr("par",k)+' style="background:'+(c.venc?"color-mix(in srgb,var(--venc) "+Math.round(18+62*v)+"%,var(--surface))":"color-mix(in srgb,var(--tr) 12%,var(--surface))")+(v>.5?";color:#fff":"")+'">'+fmt(c.n)+"</button></td>"}).join("")+"</tr>"}).join("")+"</tbody>"}
+function agenda(){
+ if(!("agendado" in TEM)){$("agdesc").textContent="A base não tem a coluna CLIENTE AGENDADO. Use a Base por NF Oficial com a aba Agendamentos (macro v12f ou mais nova).";["agk","agbar","agdn","agt"].forEach(function(i){$(i).innerHTML=""});return}
+ var rs=filtrar("ag"),A=rs.filter(function(r){return r.agc}),c={};AG.forEach(function(s){c[s.k]=0});A.forEach(function(r){c[r.ag]++});
+ var feitas=c.a24+c.af+c.asr,med=c.a24+c.af,pend=c.pe+c.pp,dls=uniq(A.map(function(r){return r.dealer})).length;
+ var ent=A.filter(function(r){return r.agr&&(r.sit==="ok"||r.sit==="fora")}),eok=ent.filter(function(r){return r.sit==="ok"}).length,adep=A.filter(function(r){return r.pzag}).length;
+ $("agdesc").textContent=A.length?fmt(A.length)+" notas de "+fmt(dls)+" destinatários com agendamento obrigatório ("+pc(A.length,rs.length)+" do recorte). Meta: agendar até 1 dia útil depois da emissão do CT-e. Clique para filtrar o painel.":"Nenhuma nota do recorte é de cliente da aba Agendamentos.";
+ function k(o){var at=o.v?' type="button" data-d="ag" data-'+(o.v.indexOf("|")>=0?"vs":"v")+'="'+o.v+'"'+pr("ag",o.v)+(o.t?' data-t="'+esc(o.t)+'"':""):(o.tip?tip(o.tip):"");var tag=o.v?"button":"div";return "<"+tag+' class="kpi '+(o.cls||"")+'"'+at+'><div class="kh"><span class="ic">'+ico(o.ic)+"</span>"+o.a+"</div><b>"+o.b+"</b><span>"+o.s+"</span></"+tag+">"}
+ var h=k({cls:"dark",ic:"cal",a:"Notas com agendamento",b:fmt(A.length),s:fmt(dls)+" destinatários",tip:["Clientes com agendamento","Notas cujo destinatário está ativo na aba Agendamentos."]});
+ h+=k({cls:c.pe?"alert":"",ic:"alert",a:"Pendentes de agendamento",b:fmt(pend),s:pend?fmt(c.pe)+" já passaram das 24h":"nenhuma pendente",v:"pe|pp",t:"Pendentes"});
+ h+=k({cls:!med?"":c.af?"alert":"good",ic:"target",a:"Agendadas em até 24h",b:med?pc(c.a24,med).replace("%","<small>%</small>"):"—",s:med?fmt(c.a24)+" de "+fmt(med)+" agendadas":"nenhuma com data de registro",v:"a24"});
+ h+=k({cls:c.af?"alert":"",ic:"clock",a:"Depois das 24h",b:fmt(c.af),s:c.af?"agendadas com mais de 1 dia útil":"nenhuma",v:"af"});
+ h+=k({cls:!ent.length?"":eok<ent.length?"alert":"good",ic:"check",a:"Agendadas entregues no prazo",b:ent.length?pc(eok,ent.length).replace("%","<small>%</small>"):"—",s:ent.length?fmt(eok)+" de "+fmt(ent.length)+" entregues":"nenhuma entregue",v:"a24|af|asr",t:"Agendadas",tip:0});
+ h+=k({ic:"doc",a:"Agendadas após a previsão",b:fmt(adep),s:adep?"no prazo pela data agendada":"nenhuma",tip:["Data agendada depois da previsão","O cliente escolheu uma data depois da PREVISÃO DE ENTREGA. O prazo passa a ser a data agendada (NOVA DATA PREV ENTREGA), então a entrega até ela conta no prazo."]});
+ $("agk").innerHTML=h;
+ $("agbar").innerHTML=AG.map(function(s){return '<button type="button" class="lgr'+of("ag",s.k)+'" data-d="ag" data-v="'+s.k+'"'+pr("ag",s.k)+'><i style="background:'+s.c+'"></i><span>'+s.n+'</span><span class="p">'+pc(c[s.k],A.length)+'</span><span class="n">'+fmt(c[s.k])+"</span></button>"}).join("");
+ var m={},ord={};A.forEach(function(r){if(!r.mag)return;(m[r.mag]=m[r.mag]||[]).push(r);ord[r.mag]=r.dta.getFullYear()*12+r.dta.getMonth()});var L=Object.keys(m).sort(function(a,b){return ord[b]-ord[a]}),mx=Math.max.apply(null,L.map(function(x){return m[x].length}).concat(1));
+ $("agdn").innerHTML=L.slice(0,12).map(function(x){var n=m[x].length,ok=m[x].filter(function(r){return r.ag==="a24"}).length,fo=m[x].filter(function(r){return r.ag==="af"}).length;return '<div class="lin"'+tip(["Agendamentos em "+x,fmt(ok)+" em até 24h",fmt(fo)+" depois das 24h"])+'><span class="nm">'+esc(x)+'</span><span style="display:block;width:'+Math.max(4,100*n/mx)+'%"><div class="bar">'+(ok?'<i style="flex:'+ok+' 1 0;background:var(--ok)"></i>':"")+(fo?'<i style="flex:'+fo+' 1 0;background:var(--fora)"></i>':"")+(n-ok-fo?'<i style="flex:'+(n-ok-fo)+' 1 0;background:var(--sp)"></i>':"")+'</div></span><span class="vl"><b style="color:var(--ink)">'+fmt(ok)+"</b> de "+fmt(n)+" em 24h · "+pc(ok,ok+fo)+"</span></div>"}).join("")||'<div class="nodata">Nenhum agendamento com data de registro no recorte.</div>';
+ var o=["pe","pp","af","asr","a24","es"],T=A.slice().sort(function(a,b){return o.indexOf(a.ag)-o.indexOf(b.ag)||((a.em?a.em.getTime():9e15)-(b.em?b.em.getTime():9e15))}),C=[["NF"],["CT-e"],["Destinatário"],["Emissão CT-e"],["Agendado em"],["Dias úteis",1],["Previsão"],["Data agendada"],["Entrega"],["Prazo"],["Situação do agendamento"]];
+ $("agt").innerHTML=T.length?"<thead><tr>"+C.map(function(x){return "<th"+(x[1]?' class="n"':"")+">"+x[0]+"</th>"}).join("")+"</tr></thead><tbody>"+T.slice(0,100).map(function(r){var s=AGK[r.ag],z=SK[r.sit];return "<tr><td>"+esc(r.nf)+"</td><td>"+esc(r.cte)+"</td><td>"+esc(r.dealer)+"</td><td>"+fd(r.em)+"</td><td>"+fd(r.dta)+'</td><td class="n"'+(r.du>1?' style="color:var(--venc);font-weight:700"':"")+">"+(r.du==null?"":r.du)+"</td><td>"+fd(r.prev)+"</td><td>"+fd(r.dag)+(r.pzag?' <small class="desc">(novo prazo)</small>':"")+"</td><td>"+fd(r.ent)+"</td><td>"+esc(z.n)+'</td><td><span class="pill"><i class="'+(s.esc?"esc":"")+'" style="background:'+s.c+'">'+s.i+"</i>"+s.n+"</span></td></tr>"}).join("")+"</tbody>"+(T.length>100?'<caption style="caption-side:bottom;text-align:left" class="desc">Mostrando 100 de '+fmt(T.length)+"</caption>":""):""}
 function qualidade(rs){
  var F=[["entrega","Data da entrega","Sem ela não há OTD: a nota segue como em trânsito.",function(r){return r.ent}],["prev","Previsão de entrega","Base do prazo e da situação.",function(r){return r.prev}],["nova_prev","Nova previsão","Reprogramação informada pela transportadora.",function(r){return r.nprev}],["prev_coleta","Previsão de coleta","Base do OTP de coleta.",function(r){return r.pcol}],["dt_coleta","Data de coleta pela transportadora","Início do transporte.",function(r){return r.col}],["valor","Valor da NF","Vem do BI; sem ele, os totais em reais ficam parciais.",function(r){return r.valor!=null}],["volume","Volumes","Vem do BI.",function(r){return r.vol!=null}],["modal","Modalidade","Distribuição ou transferência.",function(r){return r.modal!=="(vazio)"}],["obs","Observação","Ocorrência ou justificativa de atraso.",function(r){return r.obs}]];
  if("frete" in TEM)F.push(["frete","Frete","Vem do BI.",function(r){return r.frete!=null}]);
  var n=Math.max(1,rs.length);
  $("qual").innerHTML=F.map(function(f){if(!(f[0] in TEM))return "<span>"+f[1]+'</span><span class="desc" style="margin:0">coluna ausente na base</span><span class="vl">—</span>';var k=rs.filter(f[3]).length,p=k/n;return "<span"+tip([f[1],f[2],fmt(k)+" de "+fmt(rs.length)+" notas preenchidas"])+">"+f[1]+'</span><span class="trk"><i style="width:'+(100*p)+"%;background:"+(p<.5?"var(--venc)":p<.9?"var(--fora)":"var(--tr)")+'"></i></span><span class="vl"><b style="color:var(--ink)">'+pc(k,rs.length)+"</b></span>"}).join("")}
-var COL;function colunas(){COL=[["nf","NF",0],["cte","CT-e",0],["em","Emissão",0],["dealer","Destinatário",0],["cidade","Cidade",0],["uf","UF",0]].concat(INT?[["tsp","Transportadora",0]]:[]).concat([["prev","Previsão",0],["nprev","Nova previsão",0],["ent","Entrega",0],["sit","Situação",0],["dias","Dias p/ previsão",1],["valor","Valor NF",1]].concat("frete" in TEM?[["frete","Frete rateado",1]]:[]).concat([["c24","CT-e 24 h",0]]))}
-function cel(r,k){var v=r[k];if(v instanceof Date)return fd(v);if(k==="sit")return SK[v].n;if(k==="valor"||k==="frete")return v==null?"":v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});if(k==="dias")return v==null?"":(v>0?"+":"")+v;return v==null?"":v}
+var COL;function colunas(){COL=[["nf","NF",0],["cte","CT-e",0],["em","Emissão",0],["dealer","Destinatário",0],["cidade","Cidade",0],["uf","UF",0]].concat(INT?[["tsp","Transportadora",0]]:[]).concat([["prev","Previsão",0],["nprev","Nova previsão",0],["ent","Entrega",0],["sit","Situação",0],["dias","Dias p/ previsão",1],["valor","Valor NF",1]].concat("frete" in TEM?[["frete","Frete rateado",1]]:[]).concat([["c24","CT-e 24 h",0]]).concat("agendado" in TEM?[["agst","Agendamento",0],["dag","Data agendada",0]]:[]))}
+function cel(r,k){var v=r[k];if(v instanceof Date)return fd(v);if(k==="sit")return SK[v].n;if(k==="agst")return r.ag?AGK[r.ag].n:"Não exige";if(k==="valor"||k==="frete")return v==null?"":v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});if(k==="dias")return v==null?"":(v>0?"+":"")+v;return v==null?"":v}
 function ordem(rs){var k=st.k,d=st.d,o=SIT.map(function(s){return s.k});return rs.slice().sort(function(a,b){var x=a[k],y=b[k];if(k==="sit"){x=o.indexOf(x);y=o.indexOf(y)}if(x instanceof Date)x=x.getTime();if(y instanceof Date)y=y.getTime();if(x==null||x==="")return 1;if(y==null||y==="")return -1;return typeof x==="string"?d*x.localeCompare(y,"pt-BR"):d*(x-y)})}
 function det(rs){
  var O=ordem(rs),per=50,tot=Math.max(1,Math.ceil(O.length/per));if(st.p>=tot)st.p=tot-1;
  $("det").innerHTML="<thead><tr>"+COL.map(function(c){return '<th data-k="'+c[0]+'"'+(c[2]?' class="n"':"")+">"+esc(c[1])+(st.k===c[0]?(st.d>0?" ↑":" ↓"):"")+"</th>"}).join("")+"</tr></thead><tbody>"+O.slice(st.p*per,(st.p+1)*per).map(function(r){return "<tr>"+COL.map(function(c){if(c[0]==="sit"){var s=SK[r.sit];return '<td><span class="pill"><i class="'+(s.esc?"esc":"")+'" style="background:'+s.c+'">'+s.i+"</i>"+s.n+"</span></td>"}if(c[0]==="dias"&&r.sit==="venc")return '<td class="n" style="color:var(--venc);font-weight:700">'+esc(cel(r,"dias"))+"</td>";return "<td"+(c[2]?' class="n"':"")+">"+esc(cel(r,c[0]))+"</td>"}).join("")+"</tr>"}).join("")+"</tbody>";
  $("pg").innerHTML="<span>"+fmt(O.length)+" notas · página "+(st.p+1)+" de "+tot+'</span><span><button type="button" data-p="-1"'+(st.p?"":" disabled")+'>Anterior</button> <button type="button" data-p="1"'+(st.p+1<tot?"":" disabled")+">Próxima</button></span>"}
-function rot(d,v){return d==="sit"?SK[v].n:d==="faixa"?FX[FXC.indexOf(v)][1]:d==="dia"?"Emissão "+v:v}
+function rot(d,v){return d==="ag"?AGK[v].n:d==="sit"?SK[v].n:d==="faixa"?FX[FXC.indexOf(v)][1]:d==="dia"?"Emissão "+v:v}
 function chips(){var h=[];Object.keys(SEL).forEach(function(d){SEL[d].forEach(function(v){h.push('<button type="button" data-x="'+d+'" data-v="'+esc(v)+'">'+esc(rot(d,v))+" ✕</button>")})});$("chips").innerHTML=h.join("");$("limpar").hidden=!filtrado()}
-function render(){var r=filtrar();kpis(r);leitura(r);donut();hist();modal();LISTAS.forEach(lista);evo();stq();heat();qualidade(r);chips();det(r);
+function render(){var r=filtrar();kpis(r);leitura(r);agenda();donut();hist();modal();LISTAS.forEach(lista);evo();stq();heat();qualidade(r);chips();det(r);
  [].forEach.call($("seg").children,function(b){b.classList.toggle("on",b.dataset.e===ESC)});
  $("navN").textContent=fmt(r.length);$("verN").lastChild.textContent="Ver "+fmt(r.length)+" notas";
  $("fonte").textContent="Base "+FONTE+" · situação em "+fd(REF)+" · "+fmt(R.length)+" notas fiscais";
- $("rodape").innerHTML=ico("shield")+"<span>Situação = previsão original × data da entrega; sem entrega, previsão × "+fd(REF)+" (data da base). Entregas feitas depois dessa data não aparecem. OTIF ainda não é calculado: falta a confirmação de entrega completa."+(INT?" Visão interna: inclui transportadora.":" Visão cliente: sem transportadora.")+(BASE.gerado?" Painel gerado em "+BASE.gerado+".":"")+"</span>"}
+ $("rodape").innerHTML=ico("shield")+"<span>Situação = previsão original × data da entrega (cliente que agendou para depois da previsão: data agendada × entrega); sem entrega, previsão × "+fd(REF)+" (data da base). Entregas feitas depois dessa data não aparecem. OTIF ainda não é calculado: falta a confirmação de entrega completa."+(INT?" Visão interna: inclui transportadora.":" Visão cliente: sem transportadora.")+(BASE.gerado?" Painel gerado em "+BASE.gerado+".":"")+"</span>"}
 
 /* ---------- tooltip rico ---------- */
 var PRI={tsp:"PRINCIPAIS TRANSPORTADORAS",uf:"PRINCIPAIS UFs",dealer:"PRINCIPAIS DEALERS",regiao:"PRINCIPAIS REGIÕES"};
 function rico(el){
  var d=el.dataset.d,vs=vals(el),f=campo(d),base=filtrar(d),rs=base.filter(function(r){return vs.indexOf(r[f])>=0}),c=conta(rs);
- var cor=d==="sit"?SK[vs[0]].c:d==="faixa"?(vs[0].charAt(0)==="v"?"var(--venc)":"var(--tr)"):"#6CACE4";
+ var cor=d==="ag"?AGK[vs[0]].c:d==="sit"?SK[vs[0]].c:d==="faixa"?(vs[0].charAt(0)==="v"?"var(--venc)":"var(--tr)"):"#6CACE4";
  var t=el.dataset.t||rot(d,vs[0]);
  var nct=nCte(rs),h='<div class="tH"><i style="background:'+cor+'"></i>'+esc(t)+'</div><div class="tB"><b>'+fmt(c.n)+" notas</b> em <b>"+fmt(nct)+"</b> CT-e"+(nct===1?"":"s")+" · "+pc(c.n,base.length)+" do recorte</div>";
- if(d==="sit"&&vs.length===1)h+='<p class="tD">'+SK[vs[0]].d+"</p>";
+ if(d==="sit"&&vs.length===1)h+='<p class="tD">'+SK[vs[0]].d+"</p>";if(d==="ag"&&vs.length===1)h+='<p class="tD">'+AGK[vs[0]].d+"</p>";
  var kv=[];if(!(d==="sit"&&vs.length===1))SIT.forEach(function(s){if(c[s.k])kv.push([s.n,fmt(c[s.k])+" · "+pc(c[s.k],c.n)])});
  var vn=rs.filter(function(r){return r.sit==="venc"});if(vn.length)kv.push(["Atraso médio das vencidas",(vn.reduce(function(s,r){return s-r.dias},0)/vn.length).toLocaleString("pt-BR",{maximumFractionDigits:1})+" dias"]);
- var pt=rs.filter(function(r){return r.sit==="tr"}).map(function(r){return r.prev.getTime()});if(pt.length)kv.push(["Próxima previsão",fd(new Date(Math.min.apply(null,pt)))]);
+ var pt=rs.filter(function(r){return r.sit==="tr"}).map(function(r){return r.pz.getTime()});if(pt.length)kv.push(["Próxima previsão",fd(new Date(Math.min.apply(null,pt)))]);
  var vl=rs.filter(function(r){return r.valor!=null});if(vl.length)kv.push(["Valor em mercadoria",brl(vl.reduce(function(s,r){return s+r.valor},0))]);
  if("frete" in TEM){var fz=frete(rs);if(fz.ctes)kv.push(["Frete (rateado por nota)",brl(fz.v)])}
  if(kv.length)h+='<div class="tS" style="border:0;margin-top:4px;padding-top:2px">'+kv.map(function(x){return '<div class="tK"><span>'+x[0]+"</span><b>"+x[1]+"</b></div>"}).join("")+"</div>";

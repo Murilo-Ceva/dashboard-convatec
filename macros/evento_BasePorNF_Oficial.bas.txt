@@ -1,0 +1,26 @@
+' DATA DO AGENDAMENTO: gravada sozinha quando o analista marca SIM em AGENDAMENTO REALIZADO (AE).
+' Volta para vazio se o SIM for retirado. A macro de atualizacao desliga eventos, entao nao dispara aqui.
+Private Sub Worksheet_Change(ByVal Target As Range)
+    Dim alvo As Range, c As Range, colData As Long, j As Long
+    Set alvo = Intersect(Target, Me.Columns(31))
+    If alvo Is Nothing Then Exit Sub
+    For j = 32 To Me.Cells(1, Me.Columns.Count).End(xlToLeft).Column
+        If UCase$(Trim$(CStr(Me.Cells(1, j).Value2))) = "DATA DO AGENDAMENTO" Then colData = j: Exit For
+    Next j
+    If colData = 0 Then Exit Sub
+    Set alvo = Intersect(alvo, Me.UsedRange)
+    If alvo Is Nothing Then Exit Sub
+    On Error GoTo fim
+    Application.EnableEvents = False
+    For Each c In alvo.Cells
+        If c.Row > 1 Then
+            If UCase$(Trim$(CStr(c.Value2))) = "SIM" Then
+                If IsEmpty(Me.Cells(c.Row, colData).Value2) Then Me.Cells(c.Row, colData).Value2 = CDbl(Now)
+            Else
+                Me.Cells(c.Row, colData).ClearContents
+            End If
+        End If
+    Next c
+fim:
+    Application.EnableEvents = True
+End Sub

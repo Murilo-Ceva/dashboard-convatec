@@ -90,6 +90,21 @@
     "nfs_cte": [
       "Qtde. NFs do CTe",
       "Qtde NFs do CTe"
+    ],
+    "agendado": [
+      "CLIENTE AGENDADO"
+    ],
+    "agend_ok": [
+      "AGENDAMENTO REALIZADO"
+    ],
+    "data_agend": [
+      "DATA AGENDADA"
+    ],
+    "dt_agto": [
+      "DATA DO AGENDAMENTO"
+    ],
+    "ag24": [
+      "AGENDADO EM 24H"
     ]
   },
   "obrigatorias": [

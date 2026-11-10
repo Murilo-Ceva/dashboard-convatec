@@ -1,5 +1,10 @@
 Attribute VB_Name = "modBaseWV"
 Option Explicit
+' v12h CONVATEC (10/11/2026): na Base por NF Oficial, se o cliente agendou (AE = SIM) para depois da previsão,
+'   o prazo de ATRASO, DIAS DE ATRASO e OTD passa a ser a NOVA DATA PREV ENTREGA (data agendada).
+'   Só a coluna DATA DO AGENDAMENTO (gravada pelo evento da aba) acompanha a nota como coluna adicional.
+' v12g CONVATEC (10/11/2026): colunas adicionais digitadas à mão (sem fórmula, com cabeçalho, depois de AT),
+'   como DATA AGENDADA, acompanham a nota pela chave CT-e + NF. Antes ficavam presas à posição da linha.
 ' v12f CONVATEC (10/11/2026): na Base por NF Oficial, AC/AD/AE deixam de ser Ano/Mês/Qtde. NFs e viram
 '   CLIENTE AGENDADO (fórmula na aba Agendamentos: CNPJ, CNPJ truncado pelo BI ou nome), CONTATO (e-mail/portal)
 '   e AGENDAMENTO REALIZADO (manual, lista SIM/NÃO, preservado). A aba Base continua com Ano/Mês/Qtde.
@@ -25,6 +30,8 @@ Private Const DETAIL_COLS As Long = 47   'colunas da cópia de trabalho (com N DN
 Private Const WB_COLS As Long = 46       'colunas na planilha (sem N DN)
 Private Const COL_NDN As Long = 13
 'Linha do cliente na aba Agendamentos: CNPJ exato; senão CNPJ que o BI truncou em 6 dígitos (6,08849E+13); senão nome.
+'Prazo efetivo na cópia de trabalho: AD = CLIENTE AGENDADO, AF = AGENDAMENTO REALIZADO, AK = NOVA DATA PREV ENTREGA.
+Private Const PRAZO_AG As String = "IF(AND(AD2=""SIM"",AF2=""SIM"",ISNUMBER(AK2)),MAX(INT(U2),INT(AK2)),INT(U2))"
 Private Const AGENDA_POS As String = "IFERROR(MATCH(--L2,Agendamentos!$K:$K,0),IFERROR(MATCH(IF(--L2=ROUND(--L2,6-LEN(--L2)),ROUND(--L2,6-LEN(--L2)),""#""),Agendamentos!$L:$L,0),MATCH(IF(TRIM(K2)="""",""#"",TRIM(UPPER(K2))),Agendamentos!$M:$M,0)))"
 Private Const BASE_COLS As Long = 32    'colunas da Base na cópia de trabalho (com N DN)
 'Texto procurado no nome do cliente. O 238 pode vir com todos os clientes da CEVA.
@@ -69,6 +76,7 @@ Public Sub AtualizarBaseWVArquivos(ByVal arquivo238 As String, ByVal arquivo2749
     Dim nfMissing As Long, sumNF As Double, sumFreight As Double, tolerance As Double
     Dim pivotMsg As String, filterMsg As String, removed238 As Long, removedBI As Long
     Dim oldDet As Variant, oldBas As Variant, keepDet As Collection, keepBas As Collection, oldD As Object
+    Dim manualExtra As Object, restoredExtra As Long
     oldCalc = Application.Calculation: oldScreen = Application.ScreenUpdating
     oldEvents = Application.EnableEvents: oldAlerts = Application.DisplayAlerts
     oldSecurity = Application.AutomationSecurity: oldStatus = Application.StatusBar
@@ -86,6 +94,7 @@ Public Sub AtualizarBaseWVArquivos(ByVal arquivo238 As String, ByVal arquivo2749
     If LCase$(arquivo238) = LCase$(arquivo2749) Then Err.Raise vbObjectError + 504, , "Selecione dois arquivos diferentes: relatório 238 e relatório 2749."
     ValidateFile arquivo238: ValidateFile arquivo2749
     Set manual = CaptureManual(detail)
+    Set manualExtra = CaptureManualExtras(detail)
     Set transit = TransitForWorkbook(ThisWorkbook, detail)
     Set holidays = CreateObject("Scripting.Dictionary")
     Set missing = CreateObject("Scripting.Dictionary")
@@ -256,11 +265,12 @@ Public Sub AtualizarBaseWVArquivos(ByVal arquivo238 As String, ByVal arquivo2749
     ThisWorkbook.Worksheets("Base").Calculate
     committed = True
     ListaAgendamento ThisWorkbook.Worksheets(DETAIL_SHEET), nDetail + 1
+    restoredExtra = RestoreManualExtras(ThisWorkbook.Worksheets(DETAIL_SHEET), manualExtra, nDetail + 1)
     pivotMsg = RefreshDetailPivots(nDetail + 1)
     mLastMessage = nBase & " CT-es na Base; " & nDetail & " NFs na Base por NF Oficial." & vbCrLf & _
         "Modo acumulado: " & keepBas.Count & " CT-es anteriores (" & keepDet.Count & " NFs) mantidos sem alteração; " & _
         dRel.Count & " CT-es do 238 do dia novos ou atualizados." & vbCrLf & _
-        restored & " campos manuais preservados. " & (mExceptionRow - 2) & " exceções registradas." & vbCrLf & _
+        (restored + restoredExtra) & " campos manuais preservados. " & (mExceptionRow - 2) & " exceções registradas." & vbCrLf & _
         filterMsg & vbCrLf & _
         "Frete rateado somente na Base por NF Oficial. OTIF pendente de validação." & vbCrLf & _
         pivotMsg & vbCrLf & "Backup: " & backupPath & vbCrLf & "Salve a pasta de trabalho para manter a atualização."
@@ -565,6 +575,46 @@ End Function
 
 'Linhas da planilha (sem N DN) cujo CT-e não veio no 238 do dia. Na Base por NF Oficial, um CT-e que
 'voltou sem nenhuma NF também mantém as linhas antigas. Devolve os números das linhas e os valores em data.
+' Colunas depois de AT com cabeçalho e sem fórmula na linha 2 são digitadas pelo analista (ex.: DATA AGENDADA).
+' Guarda o valor de cada nota pela chave CT-e|NF, para regravar depois que a base é remontada.
+Private Function CaptureManualExtras(ByVal ws As Worksheet) As Object
+    Dim result As Object, colData As Object, c As Long, r As Long, lastRow As Long, lastCol As Long, k As String
+    Set result = CreateObject("Scripting.Dictionary")
+    Set CaptureManualExtras = result
+    lastCol = LastUsedColumn(ws)
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    For c = WB_COLS + 1 To lastCol
+        If NormalizeHeader(ws.Cells(1, c).Value2) = "DATA DO AGENDAMENTO" And Not ws.Cells(2, c).HasFormula Then
+            Set colData = CreateObject("Scripting.Dictionary")
+            For r = 2 To lastRow
+                If Len(TextValue(ws.Cells(r, 1).Value2)) > 0 And Not ws.Cells(r, c).HasFormula Then
+                    If Len(TextValue(ws.Cells(r, c).Value2)) > 0 Then
+                        k = CleanId(ws.Cells(r, 1).Value2) & "|" & CleanNFDisplay(CStr(ws.Cells(r, 3).Value2))
+                        colData(k) = ws.Cells(r, c).Value2
+                    End If
+                End If
+            Next r
+            result.Add c, colData
+        End If
+    Next c
+End Function
+
+Private Function RestoreManualExtras(ByVal ws As Worksheet, ByVal extras As Object, ByVal lastRow As Long) As Long
+    Dim c As Variant, colData As Object, r As Long, k As String, maxRow As Long
+    maxRow = Application.Max(lastRow, ws.UsedRange.Row + ws.UsedRange.Rows.Count - 1)
+    For Each c In extras.Keys
+        Set colData = extras(c)
+        ws.Range(ws.Cells(2, CLng(c)), ws.Cells(maxRow, CLng(c))).ClearContents
+        For r = 2 To lastRow
+            k = CleanId(ws.Cells(r, 1).Value2) & "|" & CleanNFDisplay(CStr(ws.Cells(r, 3).Value2))
+            If colData.Exists(k) Then
+                ws.Cells(r, CLng(c)).Value2 = colData(k)
+                RestoreManualExtras = RestoreManualExtras + 1
+            End If
+        Next r
+    Next c
+End Function
+
 Private Function OldRowsToKeep(ByVal ws As Worksheet, ByVal nCols As Long, ByVal dRel As Object, _
     ByVal dIndex As Object, ByRef data As Variant) As Collection
     Dim result As Collection, lastRow As Long, r As Long, cte As String, seen As Object, k As String
@@ -668,6 +718,9 @@ Private Sub ApplyCoreFormulas(ByVal ws As Worksheet, ByVal lastRow As Long)
     FormulaDown ws, "W", lastRow, "=IF(A2="""","""",IF(U2="""",""SEM PREVISÃO"",IF(V2="""",IF(TODAY()<=INT(U2),""EM TRÂNSITO NO PRAZO"",""EM TRÂNSITO FORA DO PRAZO""),IF(INT(V2)<=INT(U2),""NÃO"",""SIM""))))"
     FormulaDown ws, "X", lastRow, "=IF(A2="""","""",IF(U2="""","""",MAX(0,IF(V2="""",TODAY(),INT(V2))-INT(U2))))"
     If ws.Name = DETAIL_SHEET Then
+        'Cliente que agendou para depois da previsão: o prazo é a data agendada.
+        FormulaDown ws, "W", lastRow, "=IF(A2="""","""",IF(U2="""",""SEM PREVISÃO"",IF(V2="""",IF(TODAY()<=" & PRAZO_AG & ",""EM TRÂNSITO NO PRAZO"",""EM TRÂNSITO FORA DO PRAZO""),IF(INT(V2)<=" & PRAZO_AG & ",""NÃO"",""SIM""))))"
+        FormulaDown ws, "X", lastRow, "=IF(A2="""","""",IF(U2="""","""",MAX(0,IF(V2="""",TODAY(),INT(V2))-" & PRAZO_AG & ")))"
         'Letras da cópia de trabalho (com N DN): AD = CLIENTE AGENDADO, AE = CONTATO. K = Nome do DN, L = CGC DEST.
         FormulaDown ws, "AD", lastRow, "=IF(A2="""","""",IF(ISNUMBER(" & AGENDA_POS & "),""SIM"",""NÃO""))"
         FormulaDown ws, "AE", lastRow, "=IF(AD2<>""SIM"","""",IFERROR(INDEX(Agendamentos!$N:$N," & AGENDA_POS & ")&"""",""""))"
@@ -699,7 +752,7 @@ Private Sub ApplyDetailFormulas(ByVal ws As Worksheet, ByVal lastRow As Long)
     FormulaDown ws, "AN", lastRow, "=IF(A2="""","""",IF(D2="""","""",IF(ISNUMBER(D2),TODAY()-INT(D2),""DATA INVÁLIDA"")))"
     FormulaDown ws, "AO", lastRow, "=IF(A2="""","""",IF(B2="""","""",IF(ISNUMBER(B2),TODAY()-INT(B2),""DATA INVÁLIDA"")))"
     FormulaDown ws, "AP", lastRow, "=IF(A2="""","""",IF(OR(B2="""",D2=""""),""SEM DATA"",IF(AND(ISNUMBER(B2),ISNUMBER(D2)),IF(B2<D2,""DATAS INCONSISTENTES"",IF(B2-D2<=1,""ATÉ 24 HRS"",""ACIMA DE 24 HRS"")),""DATA INVÁLIDA"")))"
-    FormulaDown ws, "AQ", lastRow, "=IF(A2="""","""",IF(U2="""",""SEM PREVISÃO"",IF(ISNUMBER(U2),IF(V2="""",IF(TODAY()<=INT(U2),""EM TRÂNSITO NO PRAZO"",""EM TRÂNSITO FORA DO PRAZO""),IF(ISNUMBER(V2),IF(INT(V2)<=INT(U2),""OTD"",""FORA OTD""),""DATA INVÁLIDA"")),""DATA INVÁLIDA"")))"
+    FormulaDown ws, "AQ", lastRow, "=IF(A2="""","""",IF(U2="""",""SEM PREVISÃO"",IF(ISNUMBER(U2),IF(V2="""",IF(TODAY()<=" & PRAZO_AG & ",""EM TRÂNSITO NO PRAZO"",""EM TRÂNSITO FORA DO PRAZO""),IF(ISNUMBER(V2),IF(INT(V2)<=" & PRAZO_AG & ",""OTD"",""FORA OTD""),""DATA INVÁLIDA"")),""DATA INVÁLIDA"")))"
     FormulaDown ws, "AR", lastRow, "=IF(A2="""","""",IF(U2="""","""",IF(ISNUMBER(U2),INT(U2)-TODAY(),""DATA INVÁLIDA"")))"
     FormulaDown ws, "AS", lastRow, "=IF(A2="""","""",IF(U2="""","""",IF(ISNUMBER(U2),WEEKNUM(U2,21),""DATA INVÁLIDA"")))"
     FormulaDown ws, "AT", lastRow, "=IF(A2="""","""",IF(V2="""","""",IF(ISNUMBER(V2),WEEKNUM(V2,21),""DATA INVÁLIDA"")))"
