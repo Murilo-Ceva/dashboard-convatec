@@ -1,5 +1,9 @@
 Attribute VB_Name = "modBaseWV"
 Option Explicit
+' v12i CONVATEC (10/11/2026): DATA DO AGENDAMENTO e AGENDADO EM 24H ficam em AF:AG, logo depois de AE, para o analista.
+'   A atualização move as duas para o fim antes de começar (o modelo A:AT continua igual) e devolve para AF:AG no fim,
+'   mesmo se der erro. A lista SIM/NÃO vem do nome listaSimNao (Agendamentos!R2:R3): com "SIM,NÃO" o Excel pt-BR
+'   mostrava um item só.
 ' v12h CONVATEC (10/11/2026): na Base por NF Oficial, se o cliente agendou (AE = SIM) para depois da previsão,
 '   o prazo de ATRASO, DIAS DE ATRASO e OTD passa a ser a NOVA DATA PREV ENTREGA (data agendada).
 '   Só a coluna DATA DO AGENDAMENTO (gravada pelo evento da aba) acompanha a nota como coluna adicional.
@@ -89,6 +93,9 @@ Public Sub AtualizarBaseWVArquivos(ByVal arquivo238 As String, ByVal arquivo2749
     If ThisWorkbook.ProtectStructure Then Err.Raise vbObjectError + 502, , "A estrutura da pasta de trabalho está protegida."
     Set detail = SheetIfExists(ThisWorkbook, DETAIL_SHEET)
     If detail Is Nothing Then Err.Raise vbObjectError + 503, , "Não encontrei a aba Base por NF Oficial."
+    phase = "mover DATA DO AGENDAMENTO e AGENDADO EM 24H para o fim"
+    MoverAgendaParaFim detail
+    phase = "validar o arquivo de trabalho"
     If SheetIfExists(ThisWorkbook, "Feriados") Is Nothing Then Err.Raise vbObjectError + 511, , "Não encontrei a aba Feriados, usada no cálculo da previsão."
     ValidateModel detail
     If LCase$(arquivo238) = LCase$(arquivo2749) Then Err.Raise vbObjectError + 504, , "Selecione dois arquivos diferentes: relatório 238 e relatório 2749."
@@ -297,6 +304,7 @@ Failed:
     If commitStarted Then mLastMessage = mLastMessage & vbCrLf & "Cópia anterior disponível em: " & backupPath
 Finally:
     On Error Resume Next
+    MoverAgendaParaAE ThisWorkbook.Worksheets(DETAIL_SHEET)
     CloseWorkbookSafe src238
     CloseWorkbookSafe srcBI
     CloseWorkbookSafe stage
@@ -658,12 +666,46 @@ Private Function AppendOldRows(ByRef outputData As Variant, ByRef outRow As Long
     Set AppendOldRows = d
 End Function
 
+Private Function ColunaCab(ByVal ws As Worksheet, ByVal nome As String) As Long
+    Dim c As Long
+    For c = 1 To ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+        If NormalizeHeader(ws.Cells(1, c).Value2) = nome Then ColunaCab = c: Exit Function
+    Next c
+End Function
+
+'As duas colunas do agendamento só se movem juntas e quando estão lado a lado.
+Private Sub MoverAgendaParaFim(ByVal ws As Worksheet)
+    Dim c1 As Long, c2 As Long, ultima As Long, ev As Boolean
+    c1 = ColunaCab(ws, "DATA DO AGENDAMENTO"): c2 = ColunaCab(ws, "AGENDADO EM 24H")
+    If c1 = 0 Or c2 <> c1 + 1 Or c1 > WB_COLS Then Exit Sub
+    'Com filtro aplicado o Excel não recorta colunas inteiras (erro 1004 de vários intervalos).
+    If ws.FilterMode Then ws.ShowAllData
+    ultima = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    ev = Application.EnableEvents: Application.EnableEvents = False
+    ws.Range(ws.Columns(c1), ws.Columns(c2)).Cut
+    ws.Columns(ultima + 1).Insert Shift:=xlToRight
+    Application.CutCopyMode = False
+    Application.EnableEvents = ev
+End Sub
+
+Private Sub MoverAgendaParaAE(ByVal ws As Worksheet)
+    Dim c1 As Long, c2 As Long, ev As Boolean
+    c1 = ColunaCab(ws, "DATA DO AGENDAMENTO"): c2 = ColunaCab(ws, "AGENDADO EM 24H")
+    If c1 = 0 Or c2 <> c1 + 1 Or c1 <= WB_COLS Then Exit Sub
+    If NormalizeHeader(ws.Cells(1, 31).Value2) <> "AGENDAMENTO REALIZADO" Then Exit Sub
+    ev = Application.EnableEvents: Application.EnableEvents = False
+    ws.Range(ws.Columns(c1), ws.Columns(c2)).Cut
+    ws.Columns(32).Insert Shift:=xlToRight
+    Application.CutCopyMode = False
+    Application.EnableEvents = ev
+End Sub
+
 Private Sub ListaAgendamento(ByVal ws As Worksheet, ByVal lastRow As Long)
     Dim rng As Range
     On Error Resume Next
     Set rng = ws.Range("AE2:AE" & Application.Max(lastRow, 2))
     rng.Validation.Delete
-    rng.Validation.Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Formula1:="SIM,NÃO"
+    rng.Validation.Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Formula1:="=listaSimNao"
     rng.Validation.InCellDropdown = True
     On Error GoTo 0
 End Sub
