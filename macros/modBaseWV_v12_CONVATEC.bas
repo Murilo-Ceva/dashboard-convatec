@@ -1,5 +1,8 @@
 Attribute VB_Name = "modBaseWV"
 Option Explicit
+' v12f CONVATEC (10/11/2026): na Base por NF Oficial, AC/AD/AE deixam de ser Ano/Mês/Qtde. NFs e viram
+'   CLIENTE AGENDADO (fórmula na aba Agendamentos: CNPJ, CNPJ truncado pelo BI ou nome), CONTATO (e-mail/portal)
+'   e AGENDAMENTO REALIZADO (manual, lista SIM/NÃO, preservado). A aba Base continua com Ano/Mês/Qtde.
 ' v12e CONVATEC (10/11/2026): modo ACUMULADO pela chave CT-e. CT-e que volta no 238 tem as linhas
 '   substituídas pelos dados novos (campos manuais preservados); CT-e novo entra; CT-e que não veio
 '   no 238 do dia continua na base como estava. Não gera duplicidade de CT-e nem de CT-e + NF.
@@ -21,6 +24,8 @@ Private Const DETAIL_SHEET As String = "Base por NF Oficial"
 Private Const DETAIL_COLS As Long = 47   'colunas da cópia de trabalho (com N DN)
 Private Const WB_COLS As Long = 46       'colunas na planilha (sem N DN)
 Private Const COL_NDN As Long = 13
+'Linha do cliente na aba Agendamentos: CNPJ exato; senão CNPJ que o BI truncou em 6 dígitos (6,08849E+13); senão nome.
+Private Const AGENDA_POS As String = "IFERROR(MATCH(--L2,Agendamentos!$K:$K,0),IFERROR(MATCH(IF(--L2=ROUND(--L2,6-LEN(--L2)),ROUND(--L2,6-LEN(--L2)),""#""),Agendamentos!$L:$L,0),MATCH(IF(TRIM(K2)="""",""#"",TRIM(UPPER(K2))),Agendamentos!$M:$M,0)))"
 Private Const BASE_COLS As Long = 32    'colunas da Base na cópia de trabalho (com N DN)
 'Texto procurado no nome do cliente. O 238 pode vir com todos os clientes da CEVA.
 Private Const CLIENT_FILTER_PADRAO As String = "CONVATEC"
@@ -146,6 +151,8 @@ Public Sub AtualizarBaseWVArquivos(ByVal arquivo238 As String, ByVal arquivo2749
     ThisWorkbook.Worksheets("Transit time").Copy After:=stage.Worksheets(stage.Worksheets.Count)
     ThisWorkbook.Worksheets("TT LTL").Copy After:=stage.Worksheets(stage.Worksheets.Count)
     ThisWorkbook.Worksheets("TT Aereo").Copy After:=stage.Worksheets(stage.Worksheets.Count)
+    If SheetIfExists(ThisWorkbook, "Agendamentos") Is Nothing Then Err.Raise vbObjectError + 514, , "Não encontrei a aba Agendamentos (lista de clientes com agendamento)."
+    ThisWorkbook.Worksheets("Agendamentos").Copy After:=stage.Worksheets(stage.Worksheets.Count)
     Set ex = stage.Worksheets.Add(After:=bas): ex.Name = "Exceções"
     ex.Range("A1:F1").Value = Array("Tipo", "CT-e", "NF", "Detalhe", "Origem", "Data")
     mExceptionRow = 2
@@ -173,6 +180,7 @@ Public Sub AtualizarBaseWVArquivos(ByVal arquivo238 As String, ByVal arquivo2749
                     displayNF = CStr(nr(1))
                 End If
                 FillOutputRow dataDetail, rd, record, nr, hasBI, displayNF, nfCount, transit, holidays, missing, ex
+                dataDetail(rd, 32) = Empty   'AGENDAMENTO REALIZADO: campo do analista
                 If hasBI Then
                     dataDetail(rd, 5) = nr(20): dataDetail(rd, 16) = nr(9)
                     sumNF = sumNF + CDbl(nr(20))
@@ -247,6 +255,7 @@ Public Sub AtualizarBaseWVArquivos(ByVal arquivo238 As String, ByVal arquivo2749
     ThisWorkbook.Worksheets(DETAIL_SHEET).Calculate
     ThisWorkbook.Worksheets("Base").Calculate
     committed = True
+    ListaAgendamento ThisWorkbook.Worksheets(DETAIL_SHEET), nDetail + 1
     pivotMsg = RefreshDetailPivots(nDetail + 1)
     mLastMessage = nBase & " CT-es na Base; " & nDetail & " NFs na Base por NF Oficial." & vbCrLf & _
         "Modo acumulado: " & keepBas.Count & " CT-es anteriores (" & keepDet.Count & " NFs) mantidos sem alteração; " & _
@@ -361,6 +370,9 @@ Private Sub EnsureDetailModel(ByVal ws As Worksheet)
     End If
     If LastUsedColumn(ws) <> 47 Then Err.Raise vbObjectError + 608, , "Não foi possível ampliar a Base por NF Oficial para 47 colunas."
 
+    ws.Cells(1, 30).Value2 = "CLIENTE AGENDADO"
+    ws.Cells(1, 31).Value2 = "CONTATO"
+    ws.Cells(1, 32).Value2 = "AGENDAMENTO REALIZADO"
     ws.Cells(1, 33).Value2 = "Status"
     ws.Cells(1, 34).Value2 = "Data coleta transportador"
     ws.Cells(1, 35).Value2 = "POSSUE OCORRENCIA?"
@@ -517,7 +529,7 @@ Private Function CaptureManual(ByVal ws As Worksheet) As Object
             key = CleanId(ws.Cells(r, 1).Value2) & "|" & CleanNFDisplay(CStr(ws.Cells(r, 3).Value2))
             If result.Exists(key) Then Err.Raise vbObjectError + 615, , "Chave CT-e + NF duplicada na Base por NF Oficial: " & key
             Set rowData = CreateObject("Scripting.Dictionary")
-            For Each col In Array(25, 26, 27, 33, 34, 35, 36, 37, 47)
+            For Each col In Array(25, 26, 27, 32, 33, 34, 35, 36, 37, 47)
                 wbCol = CLng(col) - 1   'na planilha, sem a coluna M
                 If Not ws.Cells(r, wbCol).HasFormula Then
                     If Len(TextValue(ws.Cells(r, wbCol).Value2)) > 0 Then rowData.Add CStr(col), ws.Cells(r, wbCol).Value2
@@ -596,6 +608,16 @@ Private Function AppendOldRows(ByRef outputData As Variant, ByRef outRow As Long
     Set AppendOldRows = d
 End Function
 
+Private Sub ListaAgendamento(ByVal ws As Worksheet, ByVal lastRow As Long)
+    Dim rng As Range
+    On Error Resume Next
+    Set rng = ws.Range("AE2:AE" & Application.Max(lastRow, 2))
+    rng.Validation.Delete
+    rng.Validation.Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Formula1:="SIM,NÃO"
+    rng.Validation.InCellDropdown = True
+    On Error GoTo 0
+End Sub
+
 Private Sub ClearData(ByVal ws As Worksheet)
     If LastUsedRow(ws) > 1 Then ws.Range(ws.Cells(2, 1), ws.Cells(LastUsedRow(ws), LastUsedColumn(ws))).ClearContents
 End Sub
@@ -645,8 +667,14 @@ Private Sub ApplyCoreFormulas(ByVal ws As Worksheet, ByVal lastRow As Long)
     FormulaDown ws, "U", lastRow, "=IF(A2="""","""",IF(OR(B2="""",T2=""""),"""",WORKDAY.INTL(B2,T2,1," & HolidayRef(ws.Parent.Worksheets("Feriados")) & ")))"
     FormulaDown ws, "W", lastRow, "=IF(A2="""","""",IF(U2="""",""SEM PREVISÃO"",IF(V2="""",IF(TODAY()<=INT(U2),""EM TRÂNSITO NO PRAZO"",""EM TRÂNSITO FORA DO PRAZO""),IF(INT(V2)<=INT(U2),""NÃO"",""SIM""))))"
     FormulaDown ws, "X", lastRow, "=IF(A2="""","""",IF(U2="""","""",MAX(0,IF(V2="""",TODAY(),INT(V2))-INT(U2))))"
-    FormulaDown ws, "AD", lastRow, "=IF(A2="""","""",IF(B2="""","""",YEAR(B2)))"
-    FormulaDown ws, "AE", lastRow, "=IF(A2="""","""",IF(B2="""","""",MONTH(B2)))"
+    If ws.Name = DETAIL_SHEET Then
+        'Letras da cópia de trabalho (com N DN): AD = CLIENTE AGENDADO, AE = CONTATO. K = Nome do DN, L = CGC DEST.
+        FormulaDown ws, "AD", lastRow, "=IF(A2="""","""",IF(ISNUMBER(" & AGENDA_POS & "),""SIM"",""NÃO""))"
+        FormulaDown ws, "AE", lastRow, "=IF(AD2<>""SIM"","""",IFERROR(INDEX(Agendamentos!$N:$N," & AGENDA_POS & ")&"""",""""))"
+    Else
+        FormulaDown ws, "AD", lastRow, "=IF(A2="""","""",IF(B2="""","""",YEAR(B2)))"
+        FormulaDown ws, "AE", lastRow, "=IF(A2="""","""",IF(B2="""","""",MONTH(B2)))"
+    End If
 End Sub
 
 'Datas contíguas a partir de A2. A observação no fim da aba não entra no intervalo.

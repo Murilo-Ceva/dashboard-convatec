@@ -8,10 +8,14 @@ Option Explicit
 '                 uma linha com CIDADE e UF preenchidas vale só para aquela rota e tem prioridade.
 '   aba Config Follow: CC fixo (cfgCC) e nome do cliente no e-mail (cfgNomeEmail).
 '   aba Contatos, coluna E_MAIL CÓPIA (CC): cópia só daquele responsável; soma-se ao CC fixo.
+' Agendamento (botão 4): notas com CLIENTE AGENDADO = SIM, AGENDAMENTO REALIZADO diferente de SIM e sem entrega
+'   viram um rascunho por CONTATO (e-mails da aba Agendamentos), com cópia para cfgCCAgendamento.
 Private Const ABA_BASE As String = "Base por NF Oficial"
 Private Const ABA_CONTATOS As String = "Contatos"
 Private Const ABA_CONFIG As String = "Config Follow"
 Private Const TITULO As String = "Follow ConvaTec"
+'CC do agendamento: célula cfgCCAgendamento (aba Config Follow). Sem e-mail no código.
+Private Const CC_AGENDAMENTO_PADRAO As String = ""
 Private mResultado As String
 
 Public Sub GerarTrackingTransportadores()
@@ -29,6 +33,7 @@ Public Sub CriarBotoesFollow()
     PoeBotao ws, "btnAtualizarBase", "1. Atualizar base (238 + BI)", "AtualizarBaseWV", 0
     PoeBotao ws, "btnPrepararContatos", "2. Listar transportadoras em Contatos", "PrepararContatos", 1
     PoeBotao ws, "btnGerarFollow", "3. Gerar follow (rascunhos Outlook)", "GerarTrackingTransportadores", 2
+    PoeBotao ws, "btnGerarAgendamento", "4. Gerar agendamentos (rascunhos)", "GerarAgendamentos", 3
 End Sub
 
 Private Sub PoeBotao(ByVal ws As Worksheet, ByVal nome As String, ByVal texto As String, ByVal acao As String, ByVal i As Long)
@@ -72,13 +77,13 @@ Public Function IncluirTransportadoras(ByRef lista As String) As Long
     Next r
     If cT = 0 Then Err.Raise vbObjectError + 705, , "Não encontrei a coluna Transp. na aba " & ABA_BASE & "."
     Set existentes = CreateObject("Scripting.Dictionary")
-    ultimaC = wc.Cells(wc.Rows.Count, 1).End(xlUp).Row
+    ultimaC = UltimaLinha(wc, 1)
     For r = 2 To ultimaC
         t = UCase$(Texto(wc.Cells(r, 1).Value2))
         If Len(t) > 0 Then existentes(t) = True
     Next r
     Set novos = CreateObject("Scripting.Dictionary")
-    lastRow = wb.Cells(wb.Rows.Count, 1).End(xlUp).Row
+    lastRow = UltimaLinha(wb, 1)
     For r = 2 To lastRow
         t = Texto(wb.Cells(r, cT).Value2)
         If Len(t) > 0 And Len(Texto(wb.Cells(r, 1).Value2)) > 0 Then
@@ -123,7 +128,7 @@ Public Sub ExecutarTracking(ByVal silencioso As Boolean)
     cEnt = Coluna(h, "DATA DA ENTREGA"): cResp = Coluna(h, "RESP COBRANCA")
     cTransp = Coluna(h, "TRANSP.")
 
-    lastRow = ws.Cells(ws.Rows.Count, cCte).End(xlUp).Row
+    lastRow = UltimaLinha(ws, cCte)
     If lastRow < 2 Then Err.Raise vbObjectError + 701, , "A aba " & ABA_BASE & " está sem dados."
     data = ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, lastCol)).Value2
 
@@ -208,6 +213,184 @@ Fim:
     Application.ScreenUpdating = oldScreen: Application.DisplayAlerts = oldAlerts
     If Not silencioso Then MsgBox mResultado, vbInformation, TITULO
 End Sub
+
+Public Sub GerarAgendamentos()
+    ExecutarAgendamento False
+End Sub
+
+' Um rascunho por CONTATO da aba Agendamentos. Entram as notas com CLIENTE AGENDADO = SIM,
+' AGENDAMENTO REALIZADO diferente de SIM (NÃO ou em branco) e sem DATA DA ENTREGA. Nada é enviado.
+' Contato sem e-mail (portal, telefone, WhatsApp) não gera rascunho: sai na lista do final.
+Public Sub ExecutarAgendamento(ByVal silencioso As Boolean)
+    Dim ws As Worksheet, data As Variant, h As Object, grupos As Object, key As Variant, cols As Object
+    Dim lastRow As Long, lastCol As Long, r As Long, contato As String, emails As String
+    Dim cCte As Long, cAg As Long, cCont As Long, cReal As Long, cEnt As Long, cDN As Long
+    Dim ol As Object, feitos As Long, pend As Long, nSem As Long, semEmail As String, falhas As String
+    Dim resumo As String, msg As String, cc As String, oldScreen As Boolean
+    oldScreen = Application.ScreenUpdating
+    On Error GoTo Falhou
+    Set ws = ThisWorkbook.Worksheets(ABA_BASE)
+    Application.Calculate
+    lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    Set h = CreateObject("Scripting.Dictionary")
+    For r = 1 To lastCol
+        If Not h.Exists(Norm(ws.Cells(1, r).Value2)) Then h.Add Norm(ws.Cells(1, r).Value2), r
+    Next r
+    cCte = Coluna(h, "CTE"): cEnt = Coluna(h, "DATA DA ENTREGA"): cDN = Coluna(h, "NOME DO DN")
+    cAg = Coluna(h, "CLIENTE AGENDADO"): cCont = Coluna(h, "CONTATO"): cReal = Coluna(h, "AGENDAMENTO REALIZADO")
+    Set cols = CreateObject("Scripting.Dictionary")
+    cols("cte") = cCte: cols("nf") = Coluna(h, "NOTA FISCAL"): cols("dn") = cDN
+    cols("cid") = Coluna(h, "CIDADE"): cols("uf") = Coluna(h, "UF DEST."): cols("prev") = Coluna(h, "PREVISAO DE ENTREGA")
+    cols("datanf") = 0: If h.Exists("DATA.NF") Then cols("datanf") = h("DATA.NF")
+    cols("vol") = 0: If h.Exists("QTDE. VOL. DA NF (BI J)") Then cols("vol") = h("QTDE. VOL. DA NF (BI J)")
+    cols("transp") = 0: If h.Exists("TRANSP.") Then cols("transp") = h("TRANSP.")
+
+    lastRow = UltimaLinha(ws, cCte)
+    If lastRow < 2 Then Err.Raise vbObjectError + 711, , "A aba " & ABA_BASE & " está sem dados."
+    data = ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, lastCol)).Value2
+    Set grupos = CreateObject("Scripting.Dictionary")
+    For r = 2 To lastRow
+        If Len(Texto(data(r, cCte))) > 0 And Norm(data(r, cAg)) = "SIM" And Norm(data(r, cReal)) <> "SIM" And Len(Texto(data(r, cEnt))) = 0 Then
+            pend = pend + 1
+            contato = Texto(data(r, cCont))
+            If Len(contato) = 0 Then contato = "SEM CONTATO CADASTRADO"
+            If Not grupos.Exists(contato) Then grupos.Add contato, New Collection
+            grupos(contato).Add r
+        End If
+    Next r
+    If pend = 0 Then Err.Raise vbObjectError + 712, , "Nenhuma nota pendente de agendamento." & vbCrLf & _
+        "Entram as notas com CLIENTE AGENDADO = SIM, AGENDAMENTO REALIZADO diferente de SIM e sem data de entrega."
+
+    For Each key In grupos.Keys
+        emails = ExtrairEmails(CStr(key))
+        If Len(emails) = 0 Then
+            nSem = nSem + grupos(key).Count
+            semEmail = semEmail & vbCrLf & "  " & Left$(CStr(key), 140) & " (" & grupos(key).Count & " NF)"
+        Else
+            resumo = resumo & vbCrLf & "  " & emails & ": " & grupos(key).Count & " NF"
+        End If
+    Next key
+    cc = LimparEmails(Config("cfgCCAgendamento", CC_AGENDAMENTO_PADRAO))
+    If Not silencioso Then
+        msg = pend & " notas pendentes de agendamento." & vbCrLf
+        If Len(resumo) > 0 Then msg = msg & vbCrLf & "Rascunhos (cópia: " & cc & "):" & resumo & vbCrLf
+        If nSem > 0 Then msg = msg & vbCrLf & nSem & " notas com contato sem e-mail (portal, telefone) ficam de fora e serão listadas no final." & vbCrLf
+        msg = msg & vbCrLf & "Nenhum e-mail será enviado. Continuar?"
+        If MsgBox(msg, vbYesNo + vbQuestion, TITULO) <> vbYes Then Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+    For Each key In grupos.Keys
+        emails = ExtrairEmails(CStr(key))
+        If Len(emails) > 0 Then
+            If ol Is Nothing Then Set ol = CreateObject("Outlook.Application")
+            If RascunhoAgendamento(ol, emails, cc, grupos(key), data, cols) Then
+                feitos = feitos + 1
+            Else
+                falhas = falhas & vbCrLf & "  " & emails & ": " & Err.Description
+            End If
+        End If
+    Next key
+    mResultado = feitos & " rascunhos de agendamento criados na pasta Rascunhos do Outlook. Nenhum e-mail foi enviado." & vbCrLf & resumo
+    If Len(falhas) > 0 Then mResultado = mResultado & vbCrLf & vbCrLf & "ATENÇÃO, rascunhos com falha:" & falhas
+    If nSem > 0 Then mResultado = mResultado & vbCrLf & vbCrLf & "Agendar por portal ou telefone (" & nSem & " notas):" & semEmail
+    mResultado = mResultado & vbCrLf & vbCrLf & "Depois de agendar, marque SIM em AGENDAMENTO REALIZADO."
+    Application.ScreenUpdating = oldScreen
+    If Not silencioso Then MsgBox mResultado, vbInformation, TITULO
+    Exit Sub
+Falhou:
+    mResultado = "Agendamento não concluído." & vbCrLf & Err.Description
+    Application.ScreenUpdating = oldScreen
+    If Not silencioso Then MsgBox mResultado, vbExclamation, TITULO
+End Sub
+
+Private Function RascunhoAgendamento(ByVal ol As Object, ByVal para As String, ByVal cc As String, ByVal linhas As Collection, _
+                                     ByRef data As Variant, ByVal cols As Object) As Boolean
+    Dim m As Object, insp As Object, corpo As String, atual As String, p As Long, r As Variant, nomes As Object, dest As String
+    On Error GoTo Erro
+    Set nomes = CreateObject("Scripting.Dictionary")
+    For Each r In linhas
+        If Not nomes.Exists(Texto(data(r, cols("dn")))) Then nomes.Add Texto(data(r, cols("dn"))), True
+    Next r
+    dest = CStr(nomes.Keys()(0))
+    If nomes.Count > 1 Then dest = dest & " e outros"
+    Set m = ol.CreateItem(0)
+    m.To = para
+    m.CC = cc
+    m.Subject = "Agendamento de entrega | " & Config("cfgNomeEmail", "ConvaTec") & " | " & dest & " | " & linhas.Count & IIf(linhas.Count = 1, " NF", " NFs")
+    Set insp = m.GetInspector   'inclui a assinatura padrão
+    corpo = CorpoAgendamento(linhas, data, cols)
+    If InStr(1, m.Body, "Atenciosamente", vbTextCompare) = 0 Then corpo = corpo & "<p>Atenciosamente,</p>"
+    corpo = corpo & "</div>"
+    atual = m.HTMLBody
+    p = InStr(1, atual, "<body", vbTextCompare)
+    If p > 0 Then p = InStr(p, atual, ">")
+    If p > 0 Then
+        m.HTMLBody = Left$(atual, p) & corpo & Mid$(atual, p + 1)
+    Else
+        m.HTMLBody = corpo & atual
+    End If
+    m.Save
+    m.Close 0
+    RascunhoAgendamento = True
+    Exit Function
+Erro:
+    RascunhoAgendamento = False
+End Function
+
+Private Function CorpoAgendamento(ByVal linhas As Collection, ByRef data As Variant, ByVal cols As Object) As String
+    Dim s As String, r As Variant, td As String, th As String
+    th = "<th style=""border:1px solid #9aa5b8;padding:4px 8px;background:#0b1a3a;color:#fff;text-align:left"">"
+    td = "<td style=""border:1px solid #9aa5b8;padding:4px 8px"">"
+    s = "<div style=""font-family:Aptos,Calibri,Arial,sans-serif;font-size:11pt"">"
+    s = s & "<p>Prezados,</p>"
+    s = s & "<p>A CEVA Logistics está com a entrega das notas fiscais abaixo, da " & Html(Config("cfgNomeEmail", "ConvaTec")) & _
+            ", e precisa agendar o recebimento. Por gentileza, informem a data e o horário disponíveis e, se houver, o número ou a senha do agendamento.</p>"
+    s = s & "<table style=""border-collapse:collapse;font-size:10pt""><tr>" & th & "Nota fiscal</th>" & th & "CT-e</th>"
+    If cols("datanf") > 0 Then s = s & th & "Emissão NF</th>"
+    s = s & th & "Destinatário</th>" & th & "Cidade/UF</th>"
+    If cols("vol") > 0 Then s = s & th & "Volumes</th>"
+    s = s & th & "Previsão de entrega</th>"
+    If cols("transp") > 0 Then s = s & th & "Transportadora</th>"
+    s = s & "</tr>"
+    For Each r In linhas
+        s = s & "<tr>" & td & Html(Texto(data(r, cols("nf")))) & "</td>" & td & Html(Texto(data(r, cols("cte")))) & "</td>"
+        If cols("datanf") > 0 Then s = s & td & DataTexto(data(r, cols("datanf"))) & "</td>"
+        s = s & td & Html(Texto(data(r, cols("dn")))) & "</td>" & td & Html(Texto(data(r, cols("cid"))) & "/" & Texto(data(r, cols("uf")))) & "</td>"
+        If cols("vol") > 0 Then s = s & td & Html(Texto(data(r, cols("vol")))) & "</td>"
+        s = s & td & DataTexto(data(r, cols("prev"))) & "</td>"
+        If cols("transp") > 0 Then s = s & td & Html(Texto(data(r, cols("transp")))) & "</td>"
+        s = s & "</tr>"
+    Next r
+    s = s & "</table>"
+    s = s & "<p>Ficamos no aguardo da confirmação.</p>"
+    CorpoAgendamento = s
+End Function
+
+' E-mails dentro de um texto livre ("e-mails: a@x.com / b@y.com", "a@x.com com cópia b@y.com").
+Private Function ExtrairEmails(ByVal txt As String) As String
+    Dim re As Object, m As Object, s As String
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.Pattern = "[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}"
+    For Each m In re.Execute(txt)
+        s = s & ";" & m.Value
+    Next m
+    ExtrairEmails = LimparEmails(s)
+End Function
+
+Private Function DataTexto(ByVal v As Variant) As String
+    If IsError(v) Or IsEmpty(v) Then Exit Function
+    If IsNumeric(v) And Not VarType(v) = vbString Then
+        DataTexto = Format$(CDate(v), "dd/mm/yyyy")
+    Else
+        DataTexto = Html(Texto(v))
+    End If
+End Function
+
+Private Function Html(ByVal v As String) As String
+    Html = Replace(Replace(Replace(v, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
+End Function
 
 Private Sub ContarGrupo(ByVal linhas As Collection, ByRef data As Variant, ByVal cCte As Long, ByVal cPrev As Long, _
                         ByRef qtdNF As Long, ByRef qtdCte As Long, ByRef qtdVenc As Long)
@@ -340,7 +523,7 @@ Private Function NomesResponsaveis() As Object
         End Select
     Next c
     If cNome = 0 Or cMail = 0 Then Exit Function
-    lastRow = ws.Cells(ws.Rows.Count, cMail).End(xlUp).Row
+    lastRow = UltimaLinha(ws, cMail)
     For r = 2 To lastRow
         k = LCase$(LimparEmails(ws.Cells(r, cMail).Value2))
         If Len(k) > 0 And Len(Texto(ws.Cells(r, cNome).Value2)) > 0 Then d(k) = Texto(ws.Cells(r, cNome).Value2)
@@ -363,7 +546,7 @@ Public Function CopiasResponsaveis() As Object
         End Select
     Next c
     If cCc = 0 Or cMail = 0 Then Exit Function
-    lastRow = ws.Cells(ws.Rows.Count, cMail).End(xlUp).Row
+    lastRow = UltimaLinha(ws, cMail)
     For r = 2 To lastRow
         k = LCase$(LimparEmails(ws.Cells(r, cMail).Value2))
         v = LimparEmails(ws.Cells(r, cCc).Value2)
@@ -443,6 +626,17 @@ Private Function ValorOuVazio(ByVal v As Variant) As Variant
     Else
         ValorOuVazio = v
     End If
+End Function
+
+' Última linha com valor na coluna, contando linhas ocultas por filtro (End(xlUp) pula as ocultas).
+Private Function UltimaLinha(ByVal ws As Worksheet, ByVal col As Long) As Long
+    Dim r As Long
+    r = ws.UsedRange.Row + ws.UsedRange.Rows.Count - 1
+    Do While r > 1
+        If Len(Texto(ws.Cells(r, col).Value2)) > 0 Then Exit Do
+        r = r - 1
+    Loop
+    UltimaLinha = r
 End Function
 
 Private Function Texto(ByVal v As Variant) As String
