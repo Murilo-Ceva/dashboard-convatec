@@ -4,3 +4,7 @@ Código da operação ConvaTec. Os dados reais ficam fora deste repositório, no
 
 - `macros/`: módulos VBA da `Base CONVATEC - com tracking.xlsm`. `modBaseWV_v12_CONVATEC.bas` atualiza a base a partir do 238 e do BI. Desde a v12e ela acumula pelo CT-e. `modTrackingCONVATEC.bas` cria os rascunhos de follow no Outlook e nunca envia. Os e-mails ficam nas abas da planilha, não no código.
 - `painel_convatec/`: painel HTML de follow-up, copiado do painel HPE v2. `dados/exemplo.csv` é fictício. Veja o README da pasta.
+
+## Painel no site
+
+`index.html` é o painel **sem nenhuma nota**. Abra e use **Carregar base** com o `CONVATEC.csv` (export da aba Base por NF Oficial). O arquivo é lido só no navegador e não sai do computador. Os destinatários são pacientes (dados de saúde, LGPD), então nenhuma base entra neste repositório público.
