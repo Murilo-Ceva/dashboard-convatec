@@ -22,8 +22,8 @@ Copy-Item (Join-Path $raiz 'painel\template.html') (Join-Path $pc 'painel') -For
 Get-ChildItem (Join-Path $raiz 'scripts') -File | Where-Object { $_.Extension -in '.py', '.ps1' } | ForEach-Object { Copy-Item $_.FullName (Join-Path $pc 'scripts') -Force }
 $pub = Join-Path $raiz $cfg.publico
 if (Test-Path $pub) { Copy-Item $pub (Join-Path $repo 'index.html') -Force }
-# trava: nada de e-mail real nem notas no que vai para o Git
-$ruim = git -C $repo grep -I -l -E '@cevalogistics|@tecmar|"rows":\[\[' -- . 2>$null
+# trava: nada de e-mail real nem notas no que vai para o Git (este script fica fora da busca: o padrao abaixo casaria com ele mesmo)
+$ruim = git -C $repo grep -I -l -E '@cevalogistics|@tecmar|"rows":\[\[' -- . ':!painel_convatec/scripts/salvar_versao.ps1' 2>$null
 if ($ruim) { throw ('Parei: dado sensivel em ' + ($ruim -join ', ')) }
 git -C $repo add -A
 $mud = git -C $repo status --porcelain
