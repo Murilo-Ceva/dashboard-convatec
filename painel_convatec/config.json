@@ -117,5 +117,9 @@
   ],
   "so_interno": [
     "tsp"
-  ]
+  ],
+  "onedrive": {
+    "interno": "C:\\Users\\tannete\\OneDrive - CEVA Logistics\\SIT - Gestão Operacional - GESTÃO OPERACIONAL\\CONVATEC\\PAINEL\\Painel ConvaTec - interno.html",
+    "cliente": "C:\\Users\\tannete\\OneDrive - CEVA Logistics\\SIT - Gestão Operacional - GESTÃO OPERACIONAL\\CONVATEC\\PAINEL\\Painel ConvaTec - cliente.html"
+  }
 }

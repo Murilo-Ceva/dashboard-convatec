@@ -32,6 +32,18 @@ def ler_base(caminho):
     return linhas[0], linhas[1:]
 
 
+DATAS = {"emissao", "prev", "nova_prev", "entrega", "dt_coleta", "coleta", "prev_coleta", "data_agend", "dt_agto"}
+
+
+def serial_data(v):
+    """CSV salvo sem formatação traz a data como número do Excel (46335,66385). Converte para dd/mm/aaaa."""
+    m = re.fullmatch(r"(\d{5})(?:[.,]\d+)?", v)
+    if not m:
+        return v
+    d = dt.date(1899, 12, 30) + dt.timedelta(days=int(m[1]))
+    return d.strftime("%d/%m/%Y")
+
+
 def mapear(cfg, cab, linhas):
     """Devolve (colunas canonicas, linhas so com essas colunas, avisos). Para com erro se faltar obrigatoria."""
     cn = [norm(c) for c in cab]
@@ -52,6 +64,7 @@ def mapear(cfg, cab, linhas):
     for ln in linhas:
         reg = [(ln[idx[c]] if idx[c] < len(ln) else "").strip() for c in cols]
         reg = ["" if v.startswith("#") else v for v in reg]  # #N/D, #REF! do Excel
+        reg = [serial_data(v) if c in DATAS else v for c, v in zip(cols, reg)]
         d = dict(zip(cols, reg))
         if d.get("nf") or d.get("cte"):
             out.append(reg)
@@ -142,6 +155,11 @@ def main():
         os.makedirs(os.path.dirname(saida), exist_ok=True)
         open(saida, "w", encoding="utf-8", newline="\n").write(html)
         print(f"OK {'publico (sem dados)' if vazio else modo}: {0 if vazio else len(regs)} NFs | {destino}")
+        copia = cfg.get("onedrive", {}).get(modo) if not vazio else None
+        if copia:  # pasta compartilhada no OneDrive da CEVA: quem tem acesso abre sempre a versao mais nova
+            os.makedirs(os.path.dirname(copia), exist_ok=True)
+            open(copia, "w", encoding="utf-8", newline="\n").write(html)
+            print(f"   copiado para o OneDrive: {copia}")
     d = [dict(zip(cols, r)) for r in regs]
     cont = {k: sum(situacao(x, ref) == k for x in d) for k in ("ok", "fora", "tr", "venc", "sp")}
     print(f"Referência {ref:%d/%m/%Y} | CT-es {len({x['cte'] for x in d})} | situação {cont}")
